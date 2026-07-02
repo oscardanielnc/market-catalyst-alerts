@@ -27,8 +27,11 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-HORIZON_H = 48                         # cierre a +48h (earnings/Trump driftean lento)
-CHECKPOINTS_MIN = [15, 60, 240, 1440, 2880]   # +15m,1h,4h,24h,48h
+# Horizonte primario 24h (2ª lectura del scoreboard 2026-07-02: el drift anormal promedio
+# es +0.13% a 1-4h, +0.08% a 24h y −1.41% a 48h → medir a 48h evaluaba ruido/decaimiento,
+# no la señal). Earnings multi-día siguen pasando su horizon_h propio (120-192h).
+HORIZON_H = 24
+CHECKPOINTS_MIN = [15, 60, 240, 1440, 2880]   # +15m,1h,4h,24h,48h (48h solo si el horizonte llega)
 ALPACA_BASE = "https://data.alpaca.markets"
 BENCH = "QQQ"
 
@@ -67,7 +70,11 @@ def ensure_table(db_path: str) -> None:
     # Migración idempotente: añadir columnas nuevas a tablas ya creadas (CREATE IF NOT EXISTS
     # no las agrega). Cada ALTER falla si la columna ya existe -> se ignora.
     for col, decl in (("scope", "TEXT"), ("event_key", "TEXT"), ("idx_24h", "REAL"),
-                      ("abn_final", "REAL"), ("horizon_h", "REAL")):
+                      ("abn_final", "REAL"), ("horizon_h", "REAL"),
+                      # 2026-07-02: dir a 4h (el edge vive intradía) + tags de régimen en t0
+                      # (hipótesis #3 del diagnóstico: segmentar la medición por régimen)
+                      ("dir_4h", "INTEGER"), ("risk_on", "INTEGER"),
+                      ("sector_rolling_over", "INTEGER"), ("sector_ret_5d", "REAL")):
         try:
             con.execute(f"ALTER TABLE signal_outcomes ADD COLUMN {col} {decl}")
         except sqlite3.OperationalError:
@@ -93,14 +100,27 @@ def record_signal(db_path, arm, ticker, direction, category, score, source,
             t0_iso = _dt.isoformat()
         except Exception:
             pass
+        # Tags de RÉGIMEN en t0 (2026-07-02, hipótesis #3 del diagnóstico): quedan grabados
+        # en el momento de la señal para segmentar win-rate por régimen macro/sector.
+        # Best-effort: si el helper no tiene datos quedan NULL (no bloquea el registro).
+        risk_on = sec_roll = sec_r5 = None
+        try:
+            from utils.sector_regime import get_regime
+            reg = get_regime(str(ticker))
+            risk_on = reg.get("risk_on")
+            sec_roll = (None if reg.get("rolling_over") is None else int(reg["rolling_over"]))
+            sec_r5 = reg.get("ret_5d")
+        except Exception:
+            pass
+        ensure_table(db_path)   # garantiza las columnas nuevas antes del INSERT
         con = sqlite3.connect(db_path)
-        con.execute(SCHEMA)
         con.execute(
             "INSERT OR IGNORE INTO signal_outcomes "
-            "(arm,ts,ticker,direccion,categoria,scope,event_key,score,source,age_min,alert_id,price_t0,horizon_h,status,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",
+            "(arm,ts,ticker,direccion,categoria,scope,event_key,score,source,age_min,alert_id,"
+            "price_t0,horizon_h,risk_on,sector_rolling_over,sector_ret_5d,status,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",
             (arm, t0_iso, str(ticker).upper(), direction, category, scope, event_key, score, source,
-             age_min, alert_id, price_t0, horizon_h, _now()),
+             age_min, alert_id, price_t0, horizon_h, risk_on, sec_roll, sec_r5, _now()),
         )
         con.commit()
         con.close()
@@ -257,6 +277,10 @@ def resolve_open(db_path: str) -> int:
         d = (r["direccion"] or "").upper()
         upd["dir_correct"] = (None if ref is None or d not in ("LONG", "SHORT")
                               else int((ref > 0) == (d == "LONG")))
+        # dir a 4h — el edge medido vive intradía; permite comparar acierto temprano vs exit
+        a4 = upd.get("abn_4h")
+        upd["dir_4h"] = (None if a4 is None or d not in ("LONG", "SHORT")
+                         else int((a4 > 0) == (d == "LONG")))
         status = "closed" if elapsed_h >= H else "open"
         cols = ", ".join(f"{k}=?" for k in upd) + ", status=?, updated_at=?"
         con.execute(f"UPDATE signal_outcomes SET {cols} WHERE id=?",

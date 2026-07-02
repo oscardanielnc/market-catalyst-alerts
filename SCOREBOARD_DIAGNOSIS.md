@@ -1,5 +1,5 @@
 # 🎯 Scoreboard — Diagnóstico y camino a una solución
-# Doc vivo para revisar cada ciertos días. Última actualización: 2026-06-23
+# Doc vivo para revisar cada ciertos días. Última actualización: 2026-07-02
 # Dueño: Oscar Navarro · Asistente: Claude
 
 > **Decisión de Oscar (2026-06-23):** "lo vamos a ir revisando cada ciertos días, pero ya
@@ -98,8 +98,45 @@ La lectura cualitativa SÍ es clara y útil, pero no juzgamos al sistema hasta t
 
 ---
 
+## 📸 2ª lectura (2026-07-02, ~16:30 Lima) — 119 cerradas, 113 con dirección
+
+Muestra ya razonable (68 noticias + 51 market_movers cerradas). Números clave:
+
+| Métrica | Noticias | Market movers |
+|---------|----------|---------------|
+| Acierto direccional | 45.6% (31/68) | **37.8%** (17/45) |
+| abn_final promedio (48h) | −0.27% | **−3.3%** |
+| MFE promedio | +5.75% | +4.43% |
+
+- **LONG vs SHORT**: LONG 34-42% de acierto; SHORT 50-55%. 83/113 señales fueron LONG.
+  El fallo de contagio del diagnóstico #1 SIGUE vivo (sin gate de sector aún).
+- **El score sigue sin calibrar**: dir_ok por score = 6→54%, 7→33%, 8→39%, 9→50% (n=2),
+  10→100% (n=2). Sin monotonía; score≥6 ≈47% vs <6 ≈39% (dentro del ruido). El umbral
+  SMS ≥6 no separa señal de ruido.
+- **Horizonte confirmado**: abn promedio +0.13% a 1h/4h, +0.08% a 24h, **−1.41% a 48h**.
+  El drift positivo muere antes de 24h; aguantar a 48h destruye valor. Hipótesis #2 validada.
+- **⚠️ El MFE es engañoso**: 58% de señales tocan MFE≥+3%, pero solo **12/113 (11%)** lo
+  hacen con MAE>−1.5%. Un bracket TP+3/SL−1.5 se stopea primero la mayoría de las veces.
+  "Capturar el pop con trailing" NO es trivialmente tradeable — el drawdown llega antes o junto.
+- **Por categoría (noticias)**: sec_other_8k 64% (n=14, la mejor); ma_rumor 45% pero
+  abn_final +2.0/MFE +7.3 (n=11, la única con retorno positivo); earnings_guidance 25% (n=8)
+  y product_partner 25% (n=4) las peores — coherente con backfill (earnings llega priceado).
+- **Tendencia semanal**: W24 17% → W25 43% → W26 48% (+1.67 abn). Mejora, pero confundida
+  con el régimen (washout semis → rebote). Sin tags de régimen no se puede separar.
+- **Instrumentación pendiente de la 1ª lectura NO hecha**: `signal_outcomes` sigue sin
+  columnas `risk_on`/`sector_rolling_over`/`breadth`.
+
+**Conclusión 2ª lectura:** como predictor direccional a 48h el sistema NO tiene edge
+(≤ moneda) y el score no aporta seguridad. Lo que sí muestran los datos: (a) el poco edge
+que hay es temprano (<24h) — el scoreboard debería resolver a 4h/24h como horizonte primario,
+no 48h; (b) los SHORT superan a los LONG en esta cinta → gate de sector/régimen sigue siendo
+el candidato #1; (c) ma_rumor y sec_other_8k son las únicas categorías con algo rescatable.
+
 ## 🔁 Bitácora de revisiones
 
+- **2026-07-02** — 2ª lectura (119 cerradas, 113 dir). Acierto global 42%; score no calibra;
+  edge muere antes de 24h (abn_final 48h = −1.41%); solo 11% de señales tenían pop capturable
+  con SL razonable. Gate de sector + horizonte 4h/24h + tags de régimen = pendientes prioritarios.
 - **2026-06-23** — 1ª lectura (8 cerradas, 1/6 dir). Diagnóstico inicial: señales LONG ignoran
   contagio sectorial + horizonte de 48h diluye el edge temprano. Sin acción de fix aún (muestra
   mínima); solo documentado. Brief estratégico (radar+contagio) ya desplegado hoy — primera defensa

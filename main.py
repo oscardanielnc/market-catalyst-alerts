@@ -41,6 +41,7 @@ from utils.event_gate import detect_event_type, is_event_mode, event_gate2_score
 from utils.delayed_alerts import queue_followup, start_worker
 from utils.earnings_calendar import has_earnings_today_or_yesterday
 from utils.signal_score import classify_category, compute_signal_score, should_send_sms
+from utils.sector_regime import get_regime
 # premarket_scanner ARCHIVADO (2026-05-30) → _deprecated/. Sin edge validado (backtest).
 from api.app import run_dashboard
 
@@ -160,7 +161,7 @@ def get_watchlist(config: dict) -> list[str]:
 
     # 2. config.json — solo seed/fallback (merge de los que no estén ya en DB)
     wl = config.get("watchlist", {})
-    for cat in ["primary", "extended", "crypto"]:
+    for cat in ["primary", "extended", "megacap", "crypto"]:
         tickers.extend(wl.get(cat, []))
 
     return list(dict.fromkeys(tickers))  # dedup preservando orden
@@ -525,6 +526,32 @@ def process_article(
     result["signal_score"]     = signal_detail["score"]
     result["signal_categoria"] = signal_cat
     result["signal_breakdown"] = signal_detail
+
+    # ── Gate de RÉGIMEN SECTORIAL (SCOREBOARD_DIAGNOSIS 2ª lectura 2026-07-02) ──
+    # Las señales LONG con el ETF del sector girando a la baja aciertan 34% (vs 50-55%
+    # los SHORT): abrir LONG contra el sector es la mayor fuente de error medida. No se
+    # suprime del todo: se degrada el score de acción (-2, suele bajar del umbral de SMS)
+    # y la prioridad, y si igual sale SMS va marcado. El scoreboard guarda los tags de
+    # régimen (risk_on/sector) → el contrafactual del gate queda medible.
+    regime = get_regime(ticker)
+    result["sector_regime"] = regime
+    if direction == "LONG" and regime.get("rolling_over"):
+        signal_detail["score"] = max(0, signal_detail["score"] - 2)
+        signal_detail["sector_gate"] = "-2 sector rolling_over"
+        result["signal_score"] = signal_detail["score"]
+        if prioridad == "ALTA":
+            prioridad = "MEDIA"
+            result["prioridad"] = "MEDIA"
+        _r5 = regime.get("ret_5d")
+        _r5txt = f"{_r5:+.1f}% en 5d" if _r5 is not None else "girando a la baja"
+        result["resumen_cataliz"] = (
+            f"[⚠️ SECTOR {regime.get('etf')} {_r5txt} — LONG contra corriente, señal degradada] "
+            + result.get("resumen_cataliz", "")
+        )
+        logger.info(
+            f"[SectorGate] {ticker} LONG con {regime.get('etf')} rolling_over "
+            f"({_r5txt}) → signal_score -2 ({signal_detail['score']}), prioridad={prioridad}"
+        )
 
     # ── Gate 4: Playbook match (informativo) ──────────────────────────────────
     playbook_matches = find_matching_strategies(result.get("resumen_cataliz", ""))

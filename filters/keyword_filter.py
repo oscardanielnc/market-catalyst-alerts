@@ -69,6 +69,15 @@ TIER_1_KEYWORDS = [
     "NEXT TRILLION", "$1 TRILLION CLUB", "1 TRILLION CLUB",
     "JOIN THE $1 TRILLION", "TRILLION-DOLLAR CLUB",
     "ENDORSES", "ENDORSEMENT FROM", "CALLS IT THE NEXT",
+    # Entrada estratégica a un negocio / amenaza competitiva (caso META 2026-07-01:
+    # "reports suggesting Meta will offer cloud compute" llegó por Benzinga age 0,
+    # ANTES del pump de ~7am Lima, y murió con score 0 — movió a META, semis y
+    # neoclouds durante 2 días. Lenguaje periodístico específico de "empresa entra
+    # a competir en mercado nuevo", casi imposible que sea ruido.
+    "DECLARES WAR ON", "FORAY INTO", "EXPANDS INTO", "EXPANSION INTO",
+    "ENTERS THE MARKET", "ENTERING THE MARKET", "TO ENTER THE MARKET",
+    "NEW BUSINESS LINE", "NEW BUSINESS SEGMENT",
+    "TO OFFER CLOUD", "CLOUD COMPUTE", "EXCESS COMPUTE",
 ]
 
 # ── Tier 1 BAJISTA (2026-06-10): el filtro era estructuralmente alcista ────────
@@ -140,6 +149,11 @@ TIER_2_KEYWORDS = [
     "INSIDER BUYING", "CEO PURCHASED", "CFO PURCHASED",
     "SECURES CONTRACT", "SELECTED BY",
     "UNUSUAL OPTIONS",
+    # Amenaza competitiva / movida estratégica (variantes más ruidosas de la familia
+    # Tier-1 de entrada a negocio — necesitan compañía de otra keyword)
+    "TO COMPETE WITH", "COMPETING WITH", "COMPETITIVE THREAT",
+    "TAKES AIM AT", "MOVES INTO", "PUSH INTO", "BIG BET ON",
+    "RIVAL TO", "CHALLENGER TO",
     # Earnings con lenguaje periodístico real
     "QUARTERLY RESULTS", "QUARTERLY EARNINGS", "FULL YEAR RESULTS",
     "Q1 RESULTS", "Q2 RESULTS", "Q3 RESULTS", "Q4 RESULTS",
@@ -182,6 +196,16 @@ PRICED_HEADLINE_WORDS = [
     "SPIKES ON", "SOARS ON", "SURGES ON", "RALLIES ON",
 ]
 
+# ── Wires de CONTAGIO SECTORIAL (Benzinga real-time) ──────────────────────────
+# "Shares of <sector> companies are trading lower/higher amid/after ..." es un
+# detector de movimiento sectorial EN CURSO, gratis y age 0, que se descartaba
+# sistemáticamente con score 0 (caso META-cloud 2026-07-01: el wire llegó a las
+# 6:22am Lima, antes del movimiento grande, atribuido a RIOT). Es información de
+# contagio — la IA decide si el ticker de watchlist mencionado es jugable.
+SECTOR_WIRE_RE = re.compile(
+    r"SHARES OF .{0,80}?(COMPANIES|STOCKS|NAMES) ARE (TRADING|MOVING) (LOWER|HIGHER)"
+)
+
 # ── Keywords débiles (reducen score pero no descartan solos) ──────────────────
 WEAK_KEYWORDS = [
     "RUMORED", "SOURCES SAY", "COULD CONSIDER", "MIGHT CONSIDER",
@@ -219,6 +243,13 @@ def score_article(raw_text: str) -> tuple[int, list[str]]:
         if kw in text_upper:
             score += pt_weight
             found.append(kw)
+
+    # Wire de contagio sectorial: +3 (pasa solo — el umbral es 3). La dirección del
+    # wire (LOWER/HIGHER) va en la keyword para que la IA y el filtro la vean.
+    m = SECTOR_WIRE_RE.search(text_upper)
+    if m:
+        score += 3
+        found.append(f"SECTOR_WIRE_{m.group(3)}")
 
     for kw in WEAK_KEYWORDS:
         if kw in text_upper:
@@ -300,6 +331,10 @@ def passes_filter(
     score, found_keywords = score_article(raw_text)
     article["keyword_score"] = score
     article["keywords_found"] = found_keywords
+    for k in found_keywords:
+        if k.startswith("SECTOR_WIRE_"):
+            article["sector_wire"] = k.rsplit("_", 1)[-1]   # LOWER | HIGHER
+            break
 
     # EDGAR bypass: 8-Ks de empresas en watchlist pasan sin requerir keyword score.
     # Cualquier filing material es inherentemente relevante — las conviction gates

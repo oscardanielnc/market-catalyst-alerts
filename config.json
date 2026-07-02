@@ -5,6 +5,7 @@
                 "CCJ", "TLN", "BE", "EME", "NOC", "RTX", "LMT", "KTOS", "AVAV",
                 "UBER", "SHOP", "MU", "COHR", "IBM", "XOM", "CVX"],
     "extended": ["QQQ", "SPY"],
+    "megacap": ["META", "AAPL", "MSFT", "GOOGL", "AMZN", "ORCL"],
     "crypto": ["XRP"]
   },
   "intervals_seconds": {

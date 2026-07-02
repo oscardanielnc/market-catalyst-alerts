@@ -22,6 +22,10 @@ PRICED_THRESHOLDS = {
     "MU": 20,   # semiconductor volátil en earnings — +17% en Mayo-2026 era movimiento real, no priceado
     "NVDA": 15, "TSLA": 15, "SMCI": 15, "RIVN": 15,
     "LCID": 15, "WOLF": 15, "PLTR": 15, "APP": 15,
+    # Mega-caps (añadidas 2026-07-02, caso META-cloud): se mueven poco — un +6% en
+    # META/AAPL es un evento enorme y probablemente ya corrió; el default de 12%
+    # nunca las marcaría como priceadas.
+    "META": 6, "AAPL": 6, "MSFT": 6, "GOOGL": 6, "AMZN": 6, "ORCL": 8,
 }
 DEFAULT_THRESHOLD = 12
 
