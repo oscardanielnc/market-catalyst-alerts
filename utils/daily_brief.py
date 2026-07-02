@@ -462,11 +462,15 @@ def _build_prompt(brief: dict) -> str:
         "  · Reversión por catalizador: ¿algún catalizador fuerte (earnings, etc.) da viento a favor a TODO un sector "
         "y revierte una caída? → considerar ABRIR LONG en sus líderes.\n"
         "Cada punto: la lógica en cadena + el llamado a la acción más probable + el dato que lo confirmaría/invalidaría.\n"
-        "Devuelve JSON con dos campos: "
+        "Devuelve JSON con tres campos: "
         '{"resumen": "2-4 frases con la TESIS macro del momento y la jugada principal (no descriptivo)", '
-        '"atencion": ["señal accionable 1 (con acción y lógica)", "señal 2", ...]}. '
-        "Máximo 4 señales, la más urgente/probable primero. Si de verdad no hay ninguna jugada clara, "
-        "devuelve atencion vacío y dilo en una frase — no rellenes con obviedades."
+        '"atencion": ["señal accionable 1 (con acción y lógica)", "señal 2", ...], '
+        '"jugadas": [{"ticker": "TICKER o ETF (SMH/XLF/QQQ...)", "accion": "LONG|SHORT|SALIR|VIGILAR", '
+        '"tipo": "contagio|rotacion|reversion|posicion"}]}. '
+        '"jugadas" = cada señal de "atencion" reducida a su esencia MEDIBLE (un ticker o ETF + la acción); '
+        "usa VIGILAR para las condicionales que aún no llaman a actuar. Máximo 4 señales, la más "
+        "urgente/probable primero. Si de verdad no hay ninguna jugada clara, devuelve atencion y "
+        "jugadas vacíos y dilo en una frase — no rellenes con obviedades."
     )
     return "\n".join(parts)
 
@@ -549,13 +553,85 @@ def generate_narrative(brief: dict) -> dict:
         "date": today,
         "resumen": resumen,
         "atencion": atencion[:4],
+        "jugadas": _sanitize_plays(data.get("jugadas")),
         "generated_at": datetime.now(LIMA).strftime("%Y-%m-%d %H:%M"),
         "engine": engine,
     }
     prev = _read_cached_narrative()   # ANTES de sobrescribir el cache
     _save_cache(payload)
+    _append_history(payload)          # archivo permanente — el cache se sobreescribe
+    _record_plays_in_scoreboard(payload)
     _notify_if_changed(payload, prev)
     return {k: payload[k] for k in ("resumen", "atencion", "generated_at", "engine", "date")}
+
+
+# ── Auditabilidad del Brief (2026-07-02) ─────────────────────────────────────────
+# La auditoría encontró que el Brief era INAUDITABLE: el cache guarda solo la última
+# narrativa y nadie medía si sus consejos aciertan. Dos piezas: (1) histórico
+# append-only de cada narrativa generada; (2) las jugadas estructuradas van al
+# scoreboard como brazo 'brief' → el mismo resolver que mide noticias/market_movers
+# mide al estratega.
+
+_HISTORY_PATH = _DATA_DIR / "daily_brief_history.jsonl"
+
+_PLAY_ACTIONS = {"LONG": "LONG", "SHORT": "SHORT", "SALIR": "SHORT", "VIGILAR": None}
+_SECTOR_ETFS_SCOPE = {"SMH", "XLK", "XLF", "XLV", "XLI", "XLY", "XLE", "XLU", "XLP", "XLB", "XLRE"}
+
+
+def _sanitize_plays(raw) -> list:
+    """Valida las jugadas de la IA: lista de {ticker, accion, tipo} con ticker plausible."""
+    out = []
+    if not isinstance(raw, list):
+        return out
+    for j in raw[:4]:
+        if not isinstance(j, dict):
+            continue
+        tk = str(j.get("ticker") or "").strip().upper()
+        accion = str(j.get("accion") or "").strip().upper()
+        if not (1 <= len(tk) <= 6 and tk.isalnum() and accion in _PLAY_ACTIONS):
+            continue
+        out.append({"ticker": tk, "accion": accion,
+                    "tipo": str(j.get("tipo") or "otro").strip().lower()[:20]})
+    return out
+
+
+def _append_history(payload: dict) -> None:
+    try:
+        with _HISTORY_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning(f"[DailyBrief] no pude archivar narrativa: {e}")
+
+
+def _record_plays_in_scoreboard(payload: dict) -> None:
+    """Registra las jugadas direccionales (LONG/SHORT/SALIR) en el scoreboard, arm='brief'.
+    Dedup: 1 registro por ticker+dirección+día (el regen intradía no duplica). VIGILAR no
+    se mide (no predice dirección). SALIR se mide como SHORT: predice downside del ticker."""
+    try:
+        import sqlite3
+        from utils import scoreboard
+        from utils.metrics_store import DB_PATH
+        for j in payload.get("jugadas") or []:
+            direction = _PLAY_ACTIONS.get(j["accion"])
+            if not direction:
+                continue
+            tk = j["ticker"]
+            con = sqlite3.connect(DB_PATH)
+            dup = con.execute(
+                "SELECT 1 FROM signal_outcomes WHERE arm='brief' AND ticker=? AND direccion=? "
+                "AND date(ts)=date('now') LIMIT 1", (tk, direction)).fetchone()
+            con.close()
+            if dup:
+                continue
+            scope = ("macro" if tk in ("QQQ", "SPY")
+                     else "sector" if tk in _SECTOR_ETFS_SCOPE else "ticker")
+            scoreboard.record_signal(
+                DB_PATH, "brief", tk, direction, j.get("tipo") or "otro",
+                None, "DAILY_BRIEF", None,
+                datetime.now(timezone.utc).isoformat(), None, scope=scope,
+            )
+    except Exception as e:
+        logger.debug(f"[DailyBrief] scoreboard jugadas: {e}")
 
 
 def _content_signature(narr: dict | None) -> str:

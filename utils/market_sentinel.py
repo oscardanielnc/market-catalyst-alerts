@@ -40,6 +40,10 @@ DEFAULTS = {
     "qqq_ret5d_pct":      -3.0,   # velocidad: retorno 5 días hábiles (zona validada)
     "breadth_min_pct":    35.0,   # % del universo sobre EMA20 por debajo de esto → trigger
     "stop_proximity_pct":  5.0,   # posición a <5% de su chandelier = "en riesgo"
+    # Auditoría 2026-07-02: el sentinel era ciego a selloffs SECTORIALES día-1 (06-16
+    # SMH −4.8% y 07-01 SMH −5.4% pasaron en silencio porque QQQ no cruzó −2%). Con la
+    # cartera concentrada en un sector, el ETF de exposición ES el riesgo real.
+    "sector_intraday_pct": -3.0,  # ETF de sector con exposición cae esto intradía → trigger
 }
 
 # Cache por día: {clave: (fecha_utc, valor)} — breadth y barras QQQ se calculan 1 vez/día
@@ -152,12 +156,30 @@ def check_market_risk(held: "list[dict] | None" = None, thresholds: "dict | None
     if spy_chg is not None and spy_chg <= th["spy_intraday_pct"]:
         triggers.append(f"SPY {spy_chg:+.1f}% hoy")
 
+    # ETFs de sector donde HAY exposición (+ SMH siempre: el universo Marea es semis-céntrico).
+    # Cierra el hueco de la auditoría 2026-07-02: día 1 de un selloff sectorial sin QQQ −2%.
+    try:
+        from utils.sector_regime import _etf_of
+        etfs = {e for e in (_etf_of(p.get("ticker", "")) for p in (held or [])) if e}
+    except Exception:
+        etfs = set()
+    etfs.add("SMH")
+    for etf in sorted(etfs):
+        chg, _px = _live_change(etf)
+        if chg is not None and chg <= th["sector_intraday_pct"]:
+            triggers.append(f"{etf} {chg:+.1f}% hoy (sector con exposición)")
+
+    # Señales LENTAS (ret5d, breadth): tras un crash siguen negativas durante el REBOTE
+    # (eco — 06-11 mandó riesgo con QQQ +3.4%, invitaba a vender el piso). Solo cuentan
+    # si el día NO está en verde: confirman caída en curso, no la resaca de una pasada.
+    day_red = qqq_chg is None or qqq_chg <= 0
+
     r5 = qqq_ret5d(qqq_px)
-    if r5 is not None and r5 <= th["qqq_ret5d_pct"]:
+    if r5 is not None and r5 <= th["qqq_ret5d_pct"] and day_red:
         triggers.append(f"QQQ {r5:+.1f}% en 5 días")
 
     breadth = universe_breadth()
-    if breadth is not None and breadth < th["breadth_min_pct"]:
+    if breadth is not None and breadth < th["breadth_min_pct"] and day_red:
         triggers.append(f"solo {breadth:.0f}% del universo sobre su EMA20")
 
     if not triggers:
