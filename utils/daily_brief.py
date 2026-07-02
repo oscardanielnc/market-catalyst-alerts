@@ -611,7 +611,12 @@ def _record_plays_in_scoreboard(payload: dict) -> None:
         import sqlite3
         from utils import scoreboard
         from utils.metrics_store import DB_PATH
-        for j in payload.get("jugadas") or []:
+        scoreboard.ensure_table(DB_PATH)   # DB fresca: sin esto el dup-check lanza y aborta todo
+    except Exception as e:
+        logger.debug(f"[DailyBrief] scoreboard jugadas (setup): {e}")
+        return
+    for j in payload.get("jugadas") or []:
+        try:   # una jugada mala no debe abortar las demás
             direction = _PLAY_ACTIONS.get(j["accion"])
             if not direction:
                 continue
@@ -630,8 +635,8 @@ def _record_plays_in_scoreboard(payload: dict) -> None:
                 None, "DAILY_BRIEF", None,
                 datetime.now(timezone.utc).isoformat(), None, scope=scope,
             )
-    except Exception as e:
-        logger.debug(f"[DailyBrief] scoreboard jugadas: {e}")
+        except Exception as e:
+            logger.debug(f"[DailyBrief] scoreboard jugada {j}: {e}")
 
 
 def _content_signature(narr: dict | None) -> str:

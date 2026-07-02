@@ -487,6 +487,12 @@ tbody tr:hover { background: #fafafb; }
 /* ── Piloto (diseño Stitch brief 6: header + grid Top-10/Breakouts + tablas) ── */
 .pl-pagehead { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .pl-h1 { font-family: var(--font-head); font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+/* Badges de estado por sección (auditoría 2026-07-02): que nunca un número verde
+   de un paper tiente a operar antes de su GO formal. */
+.st-badge { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.02em; padding:3px 9px; border-radius:999px; vertical-align:middle; margin-left:8px; white-space:nowrap; }
+.st-val   { background:#fef3c7; color:#92400e; }   /* 🧪 en validación — no operar */
+.st-tool  { background:#e0e7ff; color:#3730a3; }   /* 📐 herramienta — no genera señales */
+.st-radar { background:#e5e7eb; color:#374151; }   /* 📡 radar — información, no recomendación */
 .pl-sub { color: var(--text2); font-size: 14px; margin-top: 4px; }
 .pl-head-actions { display: flex; align-items: center; gap: 10px; }
 .pl-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--card2); border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text2); white-space: nowrap; }
@@ -637,6 +643,7 @@ tbody tr:hover { background: #fafafb; }
     <div id="p-brief" class="panel">
       <div style="font-size:11px;color:var(--text3);margin:0 0 10px 2px">
         🧭 Resumen pre-market · <b>decision support</b> — consolida régimen, centinela macro, sectores y tus posiciones.
+        <span class="st-badge st-val">🧪 EN MEDICIÓN — sus jugadas se auditan en el Scoreboard (brazo brief)</span>
         NO da órdenes de compra/venta: tú decides. La narrativa se genera en <b>background</b>
         (cada mañana pre-market y cuando salta una noticia ALTA); abrir esta página solo lee la
         última generación — no invoca a la IA. Usa <b>↻ Regenerar</b> si quieres forzar una nueva.
@@ -655,7 +662,8 @@ tbody tr:hover { background: #fafafb; }
         en los feeds y resumidas por IA: <b>qué dijo</b>, <b>qué significa</b> y la <b>acción concreta</b>
         que podrías evaluar según tu watchlist y posiciones. Cada item lleva su <b>fuente</b> etiquetada
         (🟣 Truth Social, feeds de noticias…). Hoy: <b>Trump</b>. Próximamente: <b>Fed · Treasury · SEC</b>.
-        Decision support — tú decides.
+        Decision support — tú decides. <span class="st-badge st-radar">📡 RADAR MACRO</span>
+        <span style="display:block;margin-top:3px">⚠ Medido en el Scoreboard: las <b>cestas de tickers alcistas</b> aciertan ~31% (léelas como CONTEXTO, no como señal de compra); el valor probado está en los avisos <b>macro/bajistas</b> (80% en la muestra).</span>
       </div>
       <div class="filter-row" style="margin-bottom:12px">
         <span id="trump-asof" style="font-size:12px;color:var(--text3)">—</span>
@@ -668,9 +676,10 @@ tbody tr:hover { background: #fafafb; }
     <div id="p-scoreboard" class="panel">
       <div style="font-size:11px;color:var(--text3);margin:0 0 10px 2px">
         📈 <b>Scoreboard de auditoría</b> — mide el resultado REAL de cada señal (noticias · market
-        movers · earnings) a <b>48h</b>: reacción anormal vs QQQ, MFE/MAE y acierto direccional. Es el
-        empírico de <b>qué señales funcionan</b> y cuáles ignorar. Se puebla en background (resolver
-        horario, precio Alpaca + Binance perp). Tarda ~48h en cerrar cada señal.
+        movers · earnings · brief) a su <b>horizonte</b> (24h por defecto; earnings multi-día): reacción
+        anormal vs QQQ, MFE/MAE y acierto direccional. Es el empírico de <b>qué señales funcionan</b> y
+        cuáles ignorar. Se puebla en background (resolver horario, precio Alpaca + Binance perp).
+        <b>Los win-rate con n&lt;10 salen en gris</b>: muestra insuficiente, no saques conclusiones de ellos.
       </div>
       <div class="filter-row" style="margin-bottom:12px">
         <span id="sb-asof" style="font-size:12px;color:var(--text3)">—</span>
@@ -689,7 +698,9 @@ tbody tr:hover { background: #fafafb; }
 
     <!-- ===== NOTICIAS ===== -->
     <div id="p-noticias" class="panel on">
-      <div style="font-size:11px;color:var(--text3);margin:0 0 8px 2px">⏱ Horizonte: <b>CORTO PLAZO / EVENTO</b> (1–2 días) · distinto al Piloto, que opera la tendencia (semanas–meses)</div>
+      <div style="font-size:11px;color:var(--text3);margin:0 0 8px 2px">⏱ Horizonte: <b>CORTO PLAZO / EVENTO</b> (1–2 días) · distinto al Piloto, que opera la tendencia (semanas–meses)
+        <span class="st-badge st-radar">📡 RADAR — "mira esto", no "compra esto"</span>
+        <span style="display:block;margin-top:3px">El score prioriza ATENCIÓN (categoría+frescura+confirmación); medido en el Scoreboard: NO predice dirección. Decisión de entrada = tus playbooks.</span></div>
       <div class="stats-strip" id="n-stats">
         <div class="stat-cell"><div class="stat-label">Total alertas</div><div class="stat-value" id="ns-total">—</div><div class="stat-sub">últimas 24h</div></div>
         <div class="stat-cell"><div class="stat-label">Score 7-10</div><div class="stat-value c-red" id="ns-alta">—</div><div class="stat-sub">SMS enviados</div></div>
@@ -780,7 +791,7 @@ tbody tr:hover { background: #fafafb; }
       <!-- Header de página -->
       <div class="pl-pagehead">
         <div>
-          <h2 class="pl-h1">Piloto Dashboard</h2>
+          <h2 class="pl-h1">Piloto Dashboard <span class="st-badge st-val">🧪 PAPER — EN VALIDACIÓN</span></h2>
           <p class="pl-sub">Estrategia de momentum — visión general y señales accionables · <span style="color:var(--text3)">tendencia (semanas–meses)</span></p>
         </div>
         <div class="pl-head-actions">
@@ -795,7 +806,7 @@ tbody tr:hover { background: #fafafb; }
       <div class="stats-strip" style="margin-bottom:18px">
         <div class="stat-cell"><div class="stat-label">Capital</div><div class="stat-value c-accent" id="pl-equity">—</div><div class="stat-sub" id="pl-init">paper trading</div></div>
         <div class="stat-cell"><div class="stat-label">Retorno total</div><div class="stat-value" id="pl-ret">—</div><div class="stat-sub" id="pl-asof">—</div></div>
-        <div class="stat-cell"><div class="stat-label">Posiciones</div><div class="stat-value c-dim" id="pl-pos">—</div><div class="stat-sub">máx 5 permitidas</div></div>
+        <div class="stat-cell"><div class="stat-label">Posiciones</div><div class="stat-value c-dim" id="pl-pos">—</div><div class="stat-sub">máx 8 permitidas</div></div>
         <div class="stat-cell"><div class="stat-label">Régimen mercado</div><div class="stat-value" id="pl-macro2">—</div><div class="stat-sub">QQQ vs SMA200</div></div>
       </div>
 
@@ -837,7 +848,7 @@ tbody tr:hover { background: #fafafb; }
     <div id="p-earnings" class="panel">
       <div class="pl-pagehead">
         <div>
-          <h2 class="pl-h1">Earnings</h2>
+          <h2 class="pl-h1">Earnings <span class="st-badge st-val">🧪 EN VALIDACIÓN</span></h2>
           <p class="pl-sub">Candidatos por estrategia + calendario de próximos reportes · <span style="color:var(--text3)">tú decides holdear u operar (acciones / futuros)</span></p>
         </div>
         <div class="pl-head-actions">
@@ -869,7 +880,7 @@ tbody tr:hover { background: #fafafb; }
     <div id="p-caidas" class="panel">
       <div class="pl-pagehead">
         <div>
-          <h2 class="pl-h1">Caídas — soportes de entrada</h2>
+          <h2 class="pl-h1">Caídas — soportes de entrada <span class="st-badge st-tool">📐 HERRAMIENTA — niveles, no señal</span></h2>
           <p class="pl-sub">Ordenado por cercanía al soporte corto · <span style="color:var(--text3)">informativo: verifica si la caída es macro (sana) o por problema propio antes de entrar</span></p>
         </div>
         <div class="pl-head-actions">
@@ -909,7 +920,7 @@ tbody tr:hover { background: #fafafb; }
     <div id="p-paper" class="panel">
       <div class="pl-pagehead">
         <div>
-          <h2 class="pl-h1">🧪 Paper Overnight — validación en vivo</h2>
+          <h2 class="pl-h1">🧪 Paper Overnight — validación en vivo <span class="st-badge st-val">🧪 EN VALIDACIÓN — NO OPERAR</span></h2>
           <p class="pl-sub">Paper-trading (NO opera) del edge overnight de semis en Binance perps · cada ticker se registra a su hora de entrada y se sigue %max/%min hasta el cierre · <span style="color:var(--text3)">out-of-sample en tiempo real</span></p>
         </div>
         <div class="pl-head-actions"><span class="pl-pill" id="paper-asof">—</span></div>
@@ -1735,6 +1746,7 @@ async function loadPilot() {
 const SRC_LABEL = {
   TRUTH_SOCIAL: '🟣 Truth Social', FED: '🏛️ Fed', TREASURY: '🏦 Treasury', SEC: '⚖️ SEC',
   ALPACA_BENZINGA: 'Benzinga (RT)', FINNHUB_BENZINGA: 'Benzinga', SEC_EDGAR: 'SEC EDGAR',
+  DAILY_BRIEF: '📋 Brief',
 };
 // Badge VISTOSO de fuente (la "voz" detrás del market mover): color distintivo por origen
 // para identificar de un vistazo si viene de Trump, la Fed, Treasury o la SEC.
@@ -1830,7 +1842,7 @@ async function loadScoreboard(silent = false) {
   }
   const byArm = {};
   rows.forEach(r => { (byArm[r.arm] = byArm[r.arm] || []).push(r); });
-  const armLabel = { noticias:'📰 Noticias', market_movers:'📢 Market Movers', trump:'📢 Market Movers', earnings:'📅 Earnings', momentum:'⚡ Momentum' };
+  const armLabel = { noticias:'📰 Noticias', market_movers:'📢 Market Movers', trump:'📢 Market Movers', earnings:'📅 Earnings', momentum:'⚡ Momentum', brief:'📋 Brief diario' };
   const fmt = (v) => v == null ? '—' : (v > 0 ? '+' : '') + v + '%';
   let html = '';
   Object.keys(byArm).forEach(arm => {
@@ -1843,8 +1855,11 @@ async function loadScoreboard(silent = false) {
     // por ticker ya viene ordenado por impacto del backend; por categoría, por n
     const list = byTicker ? byArm[arm].slice() : byArm[arm].sort((a,b) => b.n - a.n);
     list.forEach(r => {
-      const wcol = r.win_rate == null ? 'var(--text3)'
+      // n<10 = muestra insuficiente → win-rate en gris y con asterisco (no induce conclusiones)
+      const lowN = (r.n || 0) < 10;
+      const wcol = (r.win_rate == null || lowN) ? 'var(--text3)'
         : (r.win_rate >= 55 ? 'var(--green)' : r.win_rate <= 45 ? 'var(--red)' : 'var(--text2)');
+      const wtxt = r.win_rate == null ? '—' : r.win_rate + '%' + (lowN ? '*' : '');
       const srcTag = (r.sources && r.sources.length)
         ? ` <span style="font-weight:400;font-size:10px;color:var(--text3)">· ${r.sources.map(s => SRC_LABEL[s] || esc(s)).join(', ')}</span>` : '';
       if (byTicker) {
@@ -1853,7 +1868,7 @@ async function loadScoreboard(silent = false) {
         html += `<tr style="border-top:1px solid var(--border,#eee)">
           <td style="padding:6px 8px;font-weight:700">${esc(r.ticker)}${catTag}</td>
           <td>${r.n}</td>
-          <td style="color:${wcol};font-weight:700">${r.win_rate == null ? '—' : r.win_rate + '%'}</td>
+          <td style="color:${wcol};font-weight:700">${wtxt}</td>
           <td style="font-weight:700">${r.impact_med == null ? '—' : r.impact_med + '%'}</td>
           <td>${fmt(r.abn_24h_med)}</td>
           <td style="font-weight:600">${fmt(r.abn_final_med)}</td>
@@ -1862,7 +1877,7 @@ async function loadScoreboard(silent = false) {
         html += `<tr style="border-top:1px solid var(--border,#eee)">
           <td style="padding:6px 8px;font-weight:600">${esc(r.categoria)}${srcTag}</td>
           <td>${r.n}</td>
-          <td style="color:${wcol};font-weight:700">${r.win_rate == null ? '—' : r.win_rate + '%'}</td>
+          <td style="color:${wcol};font-weight:700">${wtxt}</td>
           <td>${fmt(r.abn_4h_med)}</td><td>${fmt(r.abn_24h_med)}</td>
           <td style="font-weight:600">${fmt(r.abn_final_med)}</td>
           <td style="color:var(--green)">${fmt(r.mfe_med)}</td></tr>`;

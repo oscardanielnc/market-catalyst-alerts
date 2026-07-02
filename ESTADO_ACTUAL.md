@@ -1,8 +1,53 @@
 # 📍 ESTADO ACTUAL DEL SISTEMA — léeme para continuar
-# Última actualización: 2026-06-23 — Brief diario ESTRATÉGICO (tier fuerte + radar de sectores +
-#   contagio + catalizadores) · Scoreboard por ticker · login persistente. + 1ª lectura del
-#   scoreboard (vamos mal aún → ver SCOREBOARD_DIAGNOSIS.md). Todo desplegado en la VM.
+# Última actualización: 2026-07-02 — AUDITORÍA COMPLETA de las 7 secciones + paquete de fixes
+#   desplegado (gate sectorial, horizonte 24h, tags de régimen, mega-caps, sentinel sectorial,
+#   brief auditable, badges de estado). Ver el cierre 2026-07-02 abajo + SCOREBOARD_DIAGNOSIS.md.
 # Dueño: Oscar Navarro | Asistente: Claude
+
+---
+
+## ✅ CIERRE 2026-07-02 — AUDITORÍA DE LAS 7 SECCIONES + PAQUETE DE FIXES (desplegado)
+
+> DESPLEGADO en la VM (commits `dfb6d50` → este). Lecturas completas: 2ª lectura del scoreboard en
+> `SCOREBOARD_DIAGNOSIS.md`; memorias `brief-sentinel-audit`, `marea-pilot-evaluacion`,
+> `scoreboard-diagnostico`, `dip-crypto-paper-forward`, `intraday-overnight-study`.
+
+### 📊 Veredictos de la auditoría (con datos de la VM)
+| Sección | Veredicto | Dato clave |
+|---|---|---|
+| Noticias | 📡 Radar útil, score NO predice dirección | caso META-cloud: wire llegó 6:22am (pre-pump) y murió con score 0; dir_ok 45.6% |
+| Scoreboard | La sección más valiosa (auditor) | 113 cerradas: 42% dir; edge muere <24h (abn 48h −1.41%); MFE engañoso (solo 11% capturable con SL) |
+| Market Movers | Radar macro OK; cestas LONG dañinas | scope macro 80% dir (n=5) vs scope sector 31% / −3.55% (n=41) |
+| Brief+Sentinel | Firme cuando habla; anticipaba ~33% de días rojos | ciego a selloff sectorial día-1 (06-16, 07-01) + eco ret5d en rebotes; ERA inauditable |
+| Piloto (Marea) | Lo más sólido (backtest 6a, Sharpe 1.35, MaxDD −24%); vivo −4.3% en 5 sem = dentro de diseño | NO confiar todo el capital: graduación ≥6 meses + ≥30 trades → fracción 30-50% |
+| Earnings (PED/prerun) | Funciona, sin estrenar (n=1 vivo) | examen real = temporada de julio (ASML/TSM 15-jul, entrada prerun ~08-jul) |
+| Caídas | Scanner = 📐 herramienta de niveles; paper crypto TP3/SL1 = NO-GO aún | slippage −0.09% (zona GO) PERO winrate 29.1% < piso 30% del propio doc; correlación confirmada |
+| Paper Overnight | El paper te salvó dinero: −1.03%/trade en 49 trades | la prima overnight NO sobrevive el selloff sectorial (semana Meta-cloud); NO operar |
+
+### 🔧 Paquete de fixes (todo desplegado)
+1. **Gate de régimen sectorial en señales LONG** (`utils/sector_regime.py` NUEVO + `main.process_article`):
+   ETF del sector rolling_over → signal_score −2 + prioridad degradada + warning en el SMS.
+2. **Scoreboard**: horizonte primario 48h→24h (el edge vive <24h), columna `dir_4h`, y **tags de
+   régimen en t0** (`risk_on`, `sector_rolling_over`, `sector_ret_5d`) grabados en `record_signal`
+   para TODOS los brazos → la 3ª lectura podrá segmentar por régimen.
+3. **Universo**: categoría `megacap` (META/AAPL/MSFT/GOOGL/AMZN/ORCL — insertados en la watchlist
+   viva de la VM) + umbrales priced 6-8% + keywords de entrada-estratégica/amenaza competitiva
+   ("declares war on", "cloud compute"…) + wires de contagio sectorial Benzinga (`SECTOR_WIRE` +3).
+4. **Sentinel**: trigger por ETF de sector con exposición (SMH siempre) a −3% intradía; ret5d/breadth
+   solo disparan si el día no está en verde (mata el eco post-crash).
+5. **Brief auditable**: histórico append-only `data/daily_brief_history.jsonl` + campo `jugadas`
+   estructurado ({ticker, LONG|SHORT|SALIR|VIGILAR, tipo}) registrado en el scoreboard como brazo
+   `brief` (dedup ticker+dir+día; SALIR se mide como SHORT; VIGILAR no se mide).
+6. **Dashboard**: badges de estado por sección (🧪 en validación / 📐 herramienta / 📡 radar),
+   win-rates con n<10 en gris con asterisco, advertencia medida en Market Movers (cestas ≈ contexto),
+   texto del scoreboard actualizado a horizonte 24h, "máx 8" del piloto corregido.
+
+### ⏭️ Qué mirar en la próxima revisión
+- 3ª lectura del scoreboard con ≥30 cerradas post-cambios: segmentar por `risk_on`/`sector_rolling_over`
+  y comparar dir_4h vs dir al exit. ¿El gate sectorial filtró los LONG malos?
+- Brazo `brief` del scoreboard: ¿las jugadas del estratega aciertan?
+- Dip-crypto paper: cumplir 2-4 semanas → decidir GO/NO-GO con su tabla (winrate debe recuperar >32%).
+- Temporada de earnings (15-jul ASML/TSM): primer examen real del brazo Earnings.
 
 ---
 
