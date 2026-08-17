@@ -220,7 +220,7 @@ def _send_whatsapp(result: dict, to_number: str) -> bool:
     if not client:
         return False
 
-    # Formato WhatsApp: whatsapp:+51929178606
+    # Formato WhatsApp: whatsapp:+51999999999
     to_wa = f"whatsapp:{to_number}" if not to_number.startswith("whatsapp:") else to_number
 
     msg_body = format_sms(result)

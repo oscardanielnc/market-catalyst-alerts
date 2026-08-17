@@ -3,6 +3,9 @@
 
 # Base de datos y datos generados
 data/
+
+# Backup del dataset de la VM (7.6 MB de SQLite/JSON reales — no es codigo)
+_archive_vm_20260803/
 *.db
 *.db-shm
 *.db-wal
@@ -14,6 +17,10 @@ data/
 # Salidas de scripts de research (datos de corrida, no codigo)
 research/latency_log.jsonl
 research/*_out.txt
+research/*_results.csv
+research/*_results.json
+research/dip_crypto_touches.csv
+research/dip_system_events.csv
 # Caches de fetch de backtests (regenerables, no codigo) — _ped_*, _selection_*, _phaseb_*
 research/_*.json
 

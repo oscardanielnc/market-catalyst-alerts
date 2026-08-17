@@ -27,8 +27,9 @@
     "alpaca_feed": "iex",
     "twilio_sid_env": "TWILIO_ACCOUNT_SID",
     "twilio_token_env": "TWILIO_AUTH_TOKEN",
-    "twilio_from": "+18782908711",
-    "twilio_to": "+51929178606"
+    "_comment_twilio": "Numeros reales via env TWILIO_FROM / TWILIO_TO (tienen prioridad sobre estos placeholders)",
+    "twilio_from": "+10000000000",
+    "twilio_to": "+10000000000"
   },
   "claude_model": "claude-sonnet-4-6",
   "min_score_sms": 7,

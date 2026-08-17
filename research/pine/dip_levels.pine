@@ -1,0 +1,389 @@
+// © Oscar Navarro — OportunityAlert Dip Levels
+// Indicador de soportes de entrada (corto + estructural) con fuerza 1-5, chips de riesgo y
+// score de accionabilidad. REPLICA EXACTA del motor utils/dip_levels.py (mismos parámetros).
+// ALINEACIÓN: si cambias un umbral aquí, cámbialo también en utils/dip_levels.py (dict P) y viceversa.
+//
+// Mejoras v2: (1) score de accionabilidad, (2) soportes semanales, (3) calidad de rebote
+// (reacción), (4) niveles redondos + value-area (VAL). Volume POC + clustering en v1.
+// El cálculo pesado se hace SOLO en la última barra (barstate.islast).
+//@version=5
+indicator("OA Dip Levels", overlay=true, max_lines_count=60, max_labels_count=60, max_boxes_count=60)
+
+// ── Parámetros (== dict P de dip_levels.py) ──
+EMA_SHORT = 20
+EMA_MID = 50
+SMA_LONG = 200
+BB_LEN = 20
+BB_MULT = 2.0
+ATR_LEN = 14
+SWING_RECENT_K = 3
+SWING_RECENT_WIN = 45
+SWING_MAJOR_K = 7
+RECENT_LOW = 10
+FIB_LOOKBACK = 180
+POC_LOOKBACK = 120
+POC_BINS = 40
+VALUE_AREA = 0.70
+CLUSTER_ATR_MULT = 0.5
+CLUSTER_PCT = 0.012
+REACTION_FWD = 10
+REACTION_STRONG_PCT = 3.0
+WEEKLY_EMA = 20
+WEEKLY_SMA = 50
+WEEKLY_LOW_WIN = 26
+ROUND_N = 2
+DRAWDOWN_WIN = 60
+VS_SPY_IDIO_PCT = -3.0
+VOL_AVG_WIN = 20
+
+showStruct = input.bool(true, "Mostrar soportes estructurales")
+showShort  = input.bool(true, "Mostrar soportes corto plazo")
+
+// Acceso histórico dinámico (low[i]/high[i] en POC y reacción) → reservar buffer explícito
+max_bars_back(low, 210)
+max_bars_back(high, 210)
+max_bars_back(close, 210)
+max_bars_back(volume, 210)
+
+// ── Indicadores base ──
+emaS = ta.ema(close, EMA_SHORT)
+emaM = ta.ema(close, EMA_MID)
+smaL = ta.sma(close, SMA_LONG)
+atr14 = ta.atr(ATR_LEN)
+rsi14 = ta.rsi(close, 14)
+[bbMid, bbU, bbLo] = ta.bb(close, BB_LEN, BB_MULT)
+min10 = ta.lowest(low, RECENT_LOW)
+
+// ── Pivotes (se acumulan a medida que se confirman) ──
+var pivP3 = array.new_float()
+var pivB3 = array.new_int()
+var pivP7 = array.new_float()
+var pivB7 = array.new_int()
+// Objetos dibujados: se borran y redibujan en cada pase de la última barra (evita acumular
+// líneas/labels en cada tick en vivo y superar max_lines_count → error de ejecución).
+var allLines = array.new_line()
+var allLabels = array.new_label()
+pl3 = ta.pivotlow(low, SWING_RECENT_K, SWING_RECENT_K)
+if not na(pl3)
+    array.push(pivP3, pl3)
+    array.push(pivB3, bar_index - SWING_RECENT_K)
+pl7 = ta.pivotlow(low, SWING_MAJOR_K, SWING_MAJOR_K)
+if not na(pl7)
+    array.push(pivP7, pl7)
+    array.push(pivB7, bar_index - SWING_MAJOR_K)
+
+// ── Semanal (improvement 2) ──
+wEMA = request.security(syminfo.tickerid, "W", ta.ema(close, WEEKLY_EMA), lookahead=barmerge.lookahead_off)
+wSMA = request.security(syminfo.tickerid, "W", ta.sma(close, WEEKLY_SMA), lookahead=barmerge.lookahead_off)
+wLow = request.security(syminfo.tickerid, "W", ta.lowest(low, WEEKLY_LOW_WIN), lookahead=barmerge.lookahead_off)
+
+// ── vs SPY ajustado por beta (== dip_levels) ──
+spyC  = request.security("SPY", timeframe.period, close, lookahead=barmerge.lookahead_off)
+tkRet = close / close[1] - 1
+spRet = spyC / spyC[1] - 1
+corr  = ta.correlation(tkRet, spRet, 60)
+sdTk  = ta.stdev(tkRet, 60)
+sdSp  = ta.stdev(spRet, 60)
+betaRaw = (na(corr) or sdSp == 0) ? 1.0 : corr * sdTk / sdSp
+beta  = math.max(0.2, math.min(betaRaw, 4.0))
+ret5    = (close / close[5] - 1) * 100
+spyRet5 = (spyC / spyC[5] - 1) * 100
+vsSpy   = ret5 - beta * spyRet5
+idiosyncratic = vsSpy <= VS_SPY_IDIO_PCT
+
+// ── Chips de riesgo (== dip_levels) ──
+smaMid = ta.sma(close, EMA_MID)
+sma50slopeUp = smaMid > smaMid[10]
+above200 = not na(smaL) and close > smaL
+trendHealthy = above200 and sma50slopeUp
+drawdown = (close / ta.highest(high, DRAWDOWN_WIN) - 1) * 100
+volRatio = volume / ta.sma(volume, VOL_AVG_WIN)
+gapPct = (open / close[1] - 1) * 100
+isGap = math.abs(gapPct) >= 2.0
+
+// ── Helpers ──
+f_poc_val() =>
+    float lo = ta.lowest(low, POC_LOOKBACK)
+    float hi = ta.highest(high, POC_LOOKBACK)
+    float pocPrice = na
+    float valPrice = na
+    if hi > lo
+        float w = (hi - lo) / POC_BINS
+        bk = array.new_float(POC_BINS, 0.0)
+        for i = 0 to POC_LOOKBACK - 1
+            float typ = (high[i] + low[i] + close[i]) / 3
+            if not na(typ) and not na(volume[i])
+                int idx = math.max(0, math.min(int((typ - lo) / w), POC_BINS - 1))
+                array.set(bk, idx, array.get(bk, idx) + volume[i])
+        float total = array.sum(bk)
+        float mx = array.max(bk)
+        int pocI = na(mx) ? -1 : array.indexof(bk, mx)
+        if pocI >= 0 and total > 0
+            int loI = pocI
+            int hiI = pocI
+            float acc = array.get(bk, pocI)
+            float target = total * VALUE_AREA
+            while acc < target and (loI > 0 or hiI < POC_BINS - 1)
+                float left  = loI > 0 ? array.get(bk, loI - 1) : -1.0
+                float right = hiI < POC_BINS - 1 ? array.get(bk, hiI + 1) : -1.0
+                if right >= left
+                    hiI += 1
+                    acc += array.get(bk, hiI)
+                else
+                    loI -= 1
+                    acc += array.get(bk, loI)
+            pocPrice := lo + (pocI + 0.5) * w
+            valPrice := lo + loI * w
+    [pocPrice, valPrice]
+
+f_reaction(level, tol) =>
+    bounces = array.new_float()
+    int N = math.min(bar_index, FIB_LOOKBACK)
+    for i = 1 to N
+        if math.abs(low[i] - level) <= tol
+            float fmax = high[i]
+            for j = 1 to REACTION_FWD
+                if i - j >= 0
+                    fmax := math.max(fmax, high[i - j])
+            if low[i] > 0
+                array.push(bounces, (fmax / low[i] - 1) * 100)
+    float r = 0.0
+    if array.size(bounces) > 0
+        array.sort(bounces)
+        r := array.get(bounces, array.size(bounces) / 2)
+    r
+
+f_touches(level, tol) =>
+    int t = 0
+    if array.size(pivP3) > 0
+        for i = 0 to array.size(pivP3) - 1
+            if math.abs(array.get(pivP3, i) - level) <= tol
+                t += 1
+    if array.size(pivP7) > 0
+        for i = 0 to array.size(pivP7) - 1
+            if math.abs(array.get(pivP7, i) - level) <= tol
+                t += 1
+    t
+
+f_round_step(p) => p < 20 ? 1.0 : p < 100 ? 5.0 : p < 500 ? 10.0 : 50.0
+
+f_strength(types, touches, reaction, mj, volConfirm) =>
+    int s = 1
+    s += str.contains(types, "+") ? 1 : 0
+    s += touches >= 2 ? 1 : 0
+    s += reaction >= REACTION_STRONG_PCT ? 1 : 0
+    s += mj ? 1 : 0
+    s += volConfirm ? 1 : 0
+    math.min(s, 5)
+
+// ── Construcción de zonas (clustering + fuerza) en la última barra ──
+f_cluster_draw(isShort, poc, val, maxOut) =>
+    cp = array.new_float()
+    ct = array.new_string()
+    cmaj = array.new_bool()
+    tol = math.max(atr14 * CLUSTER_ATR_MULT, close * CLUSTER_PCT)
+    if isShort
+        array.push(cp, emaS)
+        array.push(ct, "EMA20")
+        array.push(cmaj, false)
+        array.push(cp, min10)
+        array.push(ct, "min 10d")
+        array.push(cmaj, false)
+        array.push(cp, bbLo)
+        array.push(ct, "BB inf")
+        array.push(cmaj, false)
+        if array.size(pivP3) > 0
+            for i = 0 to array.size(pivP3) - 1
+                if array.get(pivB3, i) >= bar_index - SWING_RECENT_WIN
+                    array.push(cp, array.get(pivP3, i))
+                    array.push(ct, "swing reciente")
+                    array.push(cmaj, false)
+        step = f_round_step(close)
+        float lvl = math.floor(close / step) * step
+        int added = 0
+        while added < ROUND_N and lvl > 0
+            if lvl < close * 0.999
+                array.push(cp, lvl)
+                array.push(ct, "redondo")
+                array.push(cmaj, false)
+                added += 1
+            lvl -= step
+    else
+        if not na(smaL)
+            array.push(cp, smaL)
+            array.push(ct, "SMA200")
+            array.push(cmaj, true)
+        if not na(emaM)
+            array.push(cp, emaM)
+            array.push(ct, "EMA50")
+            array.push(cmaj, true)
+        if array.size(pivP7) > 0
+            for i = 0 to array.size(pivP7) - 1
+                array.push(cp, array.get(pivP7, i))
+                array.push(ct, "swing mayor")
+                array.push(cmaj, true)
+        float sl = ta.lowest(low, FIB_LOOKBACK)
+        float sh = ta.highest(high, FIB_LOOKBACK)
+        float rng = sh - sl
+        if rng > 0
+            array.push(cp, sh - rng * 0.382)
+            array.push(ct, "Fib 0.382")
+            array.push(cmaj, false)
+            array.push(cp, sh - rng * 0.5)
+            array.push(ct, "Fib 0.5")
+            array.push(cmaj, false)
+            array.push(cp, sh - rng * 0.618)
+            array.push(ct, "Fib 0.618")
+            array.push(cmaj, false)
+        if not na(poc)
+            array.push(cp, poc)
+            array.push(ct, "vol POC")
+            array.push(cmaj, false)
+        if not na(val)
+            array.push(cp, val)
+            array.push(ct, "VAL")
+            array.push(cmaj, false)
+        if not na(wEMA)
+            array.push(cp, wEMA)
+            array.push(ct, "EMA20 sem")
+            array.push(cmaj, true)
+        if not na(wSMA)
+            array.push(cp, wSMA)
+            array.push(ct, "SMA50 sem")
+            array.push(cmaj, true)
+        if not na(wLow)
+            array.push(cp, wLow)
+            array.push(ct, "min sem")
+            array.push(cmaj, true)
+    // filtrar (< precio) y ordenar por precio asc
+    order = array.new_int()
+    for i = 0 to array.size(cp) - 1
+        if array.get(cp, i) > 0 and array.get(cp, i) < close * 0.999
+            array.push(order, i)
+    if array.size(order) > 1
+        for a = 1 to array.size(order) - 1
+            int key = array.get(order, a)
+            float kp = array.get(cp, key)
+            int b = a - 1
+            bool cont = b >= 0
+            while cont
+                if array.get(cp, array.get(order, b)) > kp
+                    array.set(order, b + 1, array.get(order, b))
+                    b -= 1
+                    cont := b >= 0
+                else
+                    cont := false
+            array.set(order, b + 1, key)
+    // clustering secuencial
+    zref = array.new_float()
+    ztypes = array.new_string()
+    zmajor = array.new_bool()
+    float curRef = na
+    string curTypes = ""
+    bool curMajor = false
+    int cnt = 0
+    if array.size(order) > 0
+        for k = 0 to array.size(order) - 1
+            int idx = array.get(order, k)
+            float p = array.get(cp, idx)
+            string ty = array.get(ct, idx)
+            bool mj = array.get(cmaj, idx)
+            if na(curRef) or math.abs(p - curRef) <= tol
+                curRef := na(curRef) ? p : (curRef * cnt + p) / (cnt + 1)
+                cnt += 1
+                if not str.contains(curTypes, ty)
+                    curTypes := curTypes == "" ? ty : curTypes + " + " + ty
+                curMajor := curMajor or mj
+            else
+                array.push(zref, curRef)
+                array.push(ztypes, curTypes)
+                array.push(zmajor, curMajor)
+                curRef := p
+                curTypes := ty
+                curMajor := mj
+                cnt := 1
+        array.push(zref, curRef)
+        array.push(ztypes, curTypes)
+        array.push(zmajor, curMajor)
+    // fuerza + dibujo (máx maxOut, más cercanos = los últimos del array asc)
+    int drawn = 0
+    if array.size(zref) > 0
+        for z = array.size(zref) - 1 to 0
+            if drawn < maxOut
+                float ref = array.get(zref, z)
+                string types = array.get(ztypes, z)
+                bool mj = array.get(zmajor, z)
+                int touches = f_touches(ref, tol)
+                float reaction = f_reaction(ref, tol)
+                bool reactStrong = reaction >= REACTION_STRONG_PCT
+                bool volConfirm = not na(poc) and math.abs(poc - ref) <= tol
+                int strength = f_strength(types, touches, reaction, mj, volConfirm)
+                color col = strength >= 5 ? color.new(color.lime, 0) : strength == 4 ? color.new(color.green, 10) : strength == 3 ? color.new(color.yellow, 10) : strength == 2 ? color.new(color.orange, 15) : color.new(color.red, 20)
+                ln = line.new(bar_index - 40, ref, bar_index + 6, ref, color=col, width=(isShort ? 1 : 2), style=(isShort ? line.style_dashed : line.style_solid))
+                array.push(allLines, ln)
+                string stars = str.repeat("★", strength) + str.repeat("☆", 5 - strength)
+                string txt = str.tostring(ref, format.mintick) + "  " + stars + "  " + types + (reactStrong ? "  +" + str.tostring(reaction, "#.#") + "%" : "")
+                lb = label.new(bar_index + 6, ref, txt, style=label.style_label_left, color=color.new(col, 80), textcolor=color.white, size=size.small)
+                array.push(allLabels, lb)
+                drawn += 1
+    // fuerza del más cercano (para accionabilidad)
+    int nearestStrength = 0
+    float nearestDist = na
+    if array.size(zref) > 0
+        float ref = array.get(zref, array.size(zref) - 1)
+        int touches = f_touches(ref, tol)
+        float reaction = f_reaction(ref, tol)
+        bool volConfirm = not na(poc) and math.abs(poc - ref) <= tol
+        string types = array.get(ztypes, array.size(zref) - 1)
+        bool mj = array.get(zmajor, array.size(zref) - 1)
+        nearestStrength := f_strength(types, touches, reaction, mj, volConfirm)
+        nearestDist := (close - ref) / close * 100
+    [nearestStrength, nearestDist]
+
+// ── Ejecutar en la última barra ──
+if barstate.islast
+    // borrar dibujos del pase anterior (en vivo se re-ejecuta cada tick)
+    if array.size(allLines) > 0
+        for i = 0 to array.size(allLines) - 1
+            line.delete(array.get(allLines, i))
+        array.clear(allLines)
+    if array.size(allLabels) > 0
+        for i = 0 to array.size(allLabels) - 1
+            label.delete(array.get(allLabels, i))
+        array.clear(allLabels)
+    [poc, val] = f_poc_val()
+    int nsS = 0
+    float ndS = na
+    if showShort
+        [a1, b1] = f_cluster_draw(true, poc, val, 3)
+        nsS := a1
+        ndS := b1
+    if showStruct
+        f_cluster_draw(false, poc, val, 3)
+    int strN = nsS > 0 ? nsS : 0
+    float distN = na(ndS) ? 0.0 : ndS
+    float act = na
+    if strN > 0
+        float sc = 15 * strN
+        sc += trendHealthy ? 15 : 0
+        sc += not idiosyncratic ? 10 : 0
+        sc -= math.min(math.max(distN, 0), 10)
+        act := math.max(0, math.min(100, math.round(sc)))
+    var table t = table.new(position.top_right, 2, 8, border_width=1)
+    table.cell(t, 0, 0, "OA Dip Levels", text_color=color.white, bgcolor=color.new(color.blue, 0))
+    table.cell(t, 1, 0, str.tostring(close, format.mintick), text_color=color.white, bgcolor=color.new(color.blue, 0))
+    table.cell(t, 0, 1, "Accionabilidad", text_color=color.white)
+    actCol = na(act) ? color.gray : act >= 70 ? color.green : act >= 45 ? color.orange : color.gray
+    table.cell(t, 1, 1, na(act) ? "-" : str.tostring(act) + "/100", text_color=color.white, bgcolor=color.new(actCol, 30))
+    table.cell(t, 0, 2, "Tendencia", text_color=color.white)
+    table.cell(t, 1, 2, trendHealthy ? "sano" : "riesgo", text_color=trendHealthy ? color.lime : color.red)
+    table.cell(t, 0, 3, "RSI14", text_color=color.white)
+    table.cell(t, 1, 3, str.tostring(rsi14, "#"), text_color=rsi14 < 30 ? color.orange : color.white)
+    table.cell(t, 0, 4, "Drawdown 60d", text_color=color.white)
+    table.cell(t, 1, 4, str.tostring(drawdown, "#.#") + "%", text_color=drawdown <= -25 ? color.orange : color.white)
+    table.cell(t, 0, 5, "vsSPY b=" + str.tostring(beta, "#.##"), text_color=color.white)
+    table.cell(t, 1, 5, str.tostring(vsSpy, "#.#") + " pts", text_color=idiosyncratic ? color.red : color.lime)
+    table.cell(t, 0, 6, "Vol vs 20d", text_color=color.white)
+    table.cell(t, 1, 6, "x" + str.tostring(volRatio, "#.#"), text_color=volRatio >= 1.8 ? color.orange : color.white)
+    table.cell(t, 0, 7, "Gap apertura", text_color=color.white)
+    table.cell(t, 1, 7, isGap ? str.tostring(gapPct, "#.#") + "%" : "no", text_color=isGap ? color.orange : color.gray)

@@ -1972,8 +1972,10 @@ def main():
             "Oracle no bloquea el puerto). Configurar DASHBOARD_PASS en .env."
         )
 
-    twilio_from = api_keys.get("twilio_from", "")
-    twilio_to = api_keys.get("twilio_to", "")
+    # Los numeros reales viven en el entorno (.env / EnvironmentFile del systemd).
+    # config.json solo trae placeholders porque el repo es publico.
+    twilio_from = os.environ.get("TWILIO_FROM") or api_keys.get("twilio_from", "")
+    twilio_to = os.environ.get("TWILIO_TO") or api_keys.get("twilio_to", "")
     send_priorities = config.get("send_sms_priorities", ["ALTA", "MEDIA"])
     log_priorities = config.get("log_only_priorities", ["BAJA"])
 

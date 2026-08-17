@@ -82,6 +82,52 @@ def fetch_daily_bars(ticker: str, limit: int = 300) -> list:
         return []
 
 
+def spy_regime(spy_map: dict, asof_date: str = None) -> bool:
+    """Régimen de mercado as-of `asof_date` (YYYY-MM-DD): SPY sobre su SMA200 y SMA50 con
+    pendiente al alza. None si no hay datos suficientes. spy_map = {fecha: cierre}.
+    SIN lookahead: solo usa fechas <= asof_date."""
+    if not spy_map:
+        return None
+    items = sorted(spy_map.items())
+    if asof_date:
+        items = [(d, c) for d, c in items if d <= asof_date]
+    closes = [c for _, c in items]
+    if len(closes) < 210:
+        return None
+    sma200 = sum(closes[-200:]) / 200
+    sma50_now = sum(closes[-50:]) / 50
+    sma50_prev = sum(closes[-60:-10]) / 50          # SMA50 de hace 10 ruedas
+    return bool(closes[-1] > sma200 and sma50_now > sma50_prev)
+
+
+def support_confidence(rsi: float, dist_pct: float, spy_healthy: bool,
+                       confluence: int, idiosyncratic: bool) -> tuple:
+    """Confianza del soporte 0-100 + estrellas 1-5, construida sobre lo que el backtest
+    (research/backtest_dip_system.py, 12k toques) mostró que PREDICE el rebote +3/-1:
+      RSI sobreventa (40 pts, el factor fuerte y monótono) + distancia sweet-spot 2-10%
+      (30) + régimen SPY sano (15) + confluencia (10, menor) + caída macro no-idio (5).
+    Las "estrellas viejas" (confluencia/toques/rebote) eran planas → aquí pesan poco.
+    Devuelve (stars 1-5, score 0-100)."""
+    # RSI: 25 o menos -> 40 pts ; 70 o más -> 0 (lineal). Más sobreventa = mejor.
+    rsi_pts = max(0.0, min(40.0, (70.0 - rsi) * (40.0 / 45.0)))
+    # Distancia: el sweet spot 2-10% es donde más rebota (ni pegado ni cuchillo cayendo).
+    d = dist_pct
+    if d < 2:      dist_pts = 8
+    elif d <= 10:  dist_pts = 30
+    elif d <= 15:  dist_pts = 15
+    else:          dist_pts = 5
+    # Régimen de mercado: None (desconocido) = neutro.
+    reg_pts = 15 if spy_healthy else (8 if spy_healthy is None else 0)
+    # Confluencia (estructural): peso menor, era plana en el backtest.
+    conf_pts = max(0.0, min(10.0, (confluence - 1) / 4.0 * 10.0))
+    # Caída macro (no idiosincrática) rebota un pelo mejor.
+    idio_pts = 0 if idiosyncratic else 5
+    score = round(rsi_pts + dist_pts + reg_pts + conf_pts + idio_pts)
+    score = max(0, min(100, score))
+    stars = min(5, 1 + score // 20)          # 0-19->1 ... 80-100->5
+    return stars, score
+
+
 def spy_return_5d() -> float:
     """Retorno % de SPY en las últimas 5 ruedas (para separar caída macro vs idiosincrática)."""
     bars = fetch_daily_bars("SPY", limit=10)
@@ -320,7 +366,7 @@ def _build_supports(candidates: list, price: float, atr14: float, all_pivots: li
             "price": round(ref, 2),
             "dist_pct": round((price - ref) / price * 100, 2),
             "label": " + ".join(types),
-            "strength": strength,
+            "confluence": strength,   # fuerza ESTRUCTURAL (confluencia/toques); ya no es la estrella
             "touches": touches,
             "reaction_pct": reaction,
         })
@@ -332,9 +378,10 @@ def _build_supports(candidates: list, price: float, atr14: float, all_pivots: li
 # ── Análisis principal por ticker ───────────────────────────────────────────────
 
 def analyze_ticker(ticker: str, bars: list, spy_map: dict = None,
-                   live_price: float = None) -> dict:
+                   live_price: float = None, spy_healthy: bool = None) -> dict:
     """Calcula soportes + chips de riesgo para un ticker. Devuelve None si datos insuficientes.
-    spy_map: {fecha(YYYY-MM-DD): cierre SPY} para beta + abnormal return alineados por fecha."""
+    spy_map: {fecha(YYYY-MM-DD): cierre SPY} para beta + abnormal return alineados por fecha.
+    spy_healthy: régimen de mercado as-of (si None, se deriva de spy_map sin lookahead)."""
     if len(bars) < 30:
         return None
 
@@ -429,23 +476,25 @@ def analyze_ticker(ticker: str, bars: list, spy_map: dict = None,
     is_gap = abs(gap_pct) >= 2.0
     change_today = round((price / prev - 1) * 100, 2) if prev else 0.0
 
+    # ── ESTRELLAS REFORMULADAS (basadas en backtest: RSI + distancia + régimen) ──
+    # Régimen de mercado as-of el último día de `bars` (sin lookahead).
+    if spy_healthy is None and spy_map:
+        asof = bars[-1]["t"][:10]
+        spy_healthy = spy_regime(spy_map, asof)
+    # Cada soporte recibe `strength` (estrellas 1-5 PREDICTIVAS) + `conf_score` (0-100).
+    # `confluence` (estructural) queda como dato menor para tooltip.
+    for s in short_sup + struct_sup:
+        stars, cscore = support_confidence(
+            rsi14, s["dist_pct"], spy_healthy, s.get("confluence", 1), idiosyncratic)
+        s["strength"] = stars
+        s["conf_score"] = cscore
+
     # % al soporte más cercano (clave de ranking). Si no hay corto, cae al estructural.
     nearest_sup = short_sup[0] if short_sup else (struct_sup[0] if struct_sup else None)
     nearest = nearest_sup["dist_pct"] if nearest_sup else None
 
-    # ── Score de ACCIONABILIDAD 0-100 (improvement 1) ──
-    # Combina fuerza del soporte más cercano + tendencia sana + caída macro (no idiosincrática)
-    # − penalización por lejanía al soporte. Surfacea los MEJORES dip-buys, no solo el más cercano.
-    # Idéntico en el Pine para mantener alineación.
-    actionability = None
-    if nearest_sup is not None:
-        sc = 15 * nearest_sup["strength"]              # 15..75 por fuerza (1-5)
-        if trend_healthy:
-            sc += 15                                   # tendencia de fondo sana
-        if not idiosyncratic:
-            sc += 10                                   # caída macro (más sana que problema propio)
-        sc -= min(max(nearest if nearest is not None else 0, 0), 10)   # lejanía resta hasta 10
-        actionability = max(0, min(100, round(sc)))
+    # ── ACCIONABILIDAD 0-100 = confianza del soporte más cercano (ya integra RSI+dist+régimen) ──
+    actionability = nearest_sup["conf_score"] if nearest_sup else None
 
     return {
         "ticker": ticker,
@@ -467,5 +516,6 @@ def analyze_ticker(ticker: str, bars: list, spy_map: dict = None,
             "vol_ratio": vol_ratio,
             "gap": is_gap,
             "gap_pct": gap_pct,
+            "spy_healthy": spy_healthy,
         },
     }
